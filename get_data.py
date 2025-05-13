@@ -202,7 +202,12 @@ def process_score_margin(margin_str):
 # --- 関数の使用例 ---
 if __name__ == "__main__":
     # 例1: 最初の 50000 行を読み込む
-    db_file = 'C:\Workspace\PBL\\nba.sqlite'
+    #ノートPC用path
+    #db_file = 'C:\Workspace\PBL\\nba.sqlite'
+
+    #研究室PC用path
+    db_file = r'C:\Users\amilu\Projects\vsCodeFile\PBL\nba.sqlite'
+
     limit_rows = 45616
     # 1. Load Data
     df_processed = load_and_process_pbp(db_file, limit_rows=limit_rows)
