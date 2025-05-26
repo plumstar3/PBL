@@ -8,19 +8,7 @@ from typing import Optional, Tuple, List
 import os
 from tqdm import tqdm
 import random
-
-# --- 乱数シードの固定（結果の再現性を確保するため） ---
-def set_seeds(seed=42):
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    random.seed(seed)
-    np.random.seed(seed)
-    tf.random.set_seed(seed)
-    # GPU使用時の決定性を確保するための追加設定（パフォーマンスに影響する可能性あり）
-    # tf.config.experimental.enable_op_determinism()
-
-# シードを固定して実行
-
-# --- Keras/TensorFlow のインポート ---
+# --- Keras/TensorFlow Imports ---
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout, TimeDistributed
@@ -28,19 +16,31 @@ from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.callbacks import EarlyStopping
 import matplotlib.pyplot as plt
 import seaborn as sns
-import japanize_matplotlib
+import japanize_matplotlib # Can be removed if all plot labels are in English
 
-# 出力幅を広げる設定
+# --- Seed Fixing (for reproducibility) ---
+def set_seeds(seed=42):
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    os.environ['TF_DETERMINISTIC_OPS'] = '1' # Enhance determinism of TensorFlow operations
+    os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0' # Turn off oneDNN custom operations (based on info message)
+    random.seed(seed)
+    np.random.seed(seed)
+    tf.random.set_seed(seed)
+
+# Set seeds for execution
+set_seeds()
+
+# Pandas display settings
 pd.set_option('display.width', 1000)
 pd.set_option('display.max_columns', None)
 
-"""## 2: データ読み込み・前処理関数の定義 (load_and_process_pbp)"""
+"""## 2: Data Loading and Preprocessing Function Definition (load_and_process_pbp)"""
 
 def load_and_process_pbp(db_path: str, limit_rows: Optional[int] = None) -> Optional[pd.DataFrame]:
     """
-    SQLiteデータベースからプレイバイプレイデータを読み込み、データ型を処理し、
-    ホームチームの勝敗情報を計算して元のデータに結合します。
-    (チャンク読み込みとプログレスバー表示に対応)
+    Loads play-by-play data from an SQLite database, processes data types,
+    calculates home team win information, and merges it with the original data.
+    (Supports chunk loading and progress bar display)
     """
     print(f"--- Starting data loading and processing ---")
     print(f"Database path: {db_path}")
@@ -153,7 +153,7 @@ def load_and_process_pbp(db_path: str, limit_rows: Optional[int] = None) -> Opti
         print(f"Error details: {e}")
         return None
 
-"""## 3: 特徴量エンジニアリング用関数の定義"""
+"""## 3: Feature Engineering Function Definitions"""
 
 def parse_time_to_seconds(time_str: str) -> Optional[int]:
     if isinstance(time_str, str) and ':' in time_str:
@@ -172,13 +172,13 @@ def calculate_seconds_elapsed(row: pd.Series) -> Optional[float]:
     seconds_in_period = parse_time_to_seconds(pctimestring)
     if seconds_in_period is None:
         return None
-    seconds_per_period = 720 if period <= 4 else 300
+    seconds_per_period = 720 if period <= 4 else 300 # 12 min for regulation, 5 min for OT
     seconds_elapsed_in_current_period = seconds_per_period - seconds_in_period
     if seconds_elapsed_in_current_period < 0 or seconds_elapsed_in_current_period > seconds_per_period:
-         return None
-    if period <= 4:
+         return None # Should not happen with valid pctimestring
+    if period <= 4: # Regulation periods 1-4
         total_seconds_elapsed = (period - 1) * 720 + seconds_elapsed_in_current_period
-    else:
+    else: # Overtime periods (period 5 is OT1, period 6 is OT2, etc.)
         total_seconds_elapsed = 4 * 720 + (period - 5) * 300 + seconds_elapsed_in_current_period
     return total_seconds_elapsed
 
@@ -193,14 +193,14 @@ def process_score_margin(margin_str: str) -> Optional[int]:
         except ValueError:
             return None
 
-"""## 4: 設定とデータ読み込みの実行"""
-# ご自身の環境に合わせてパスを修正してください
-db_file = r'C:\Users\amilu\Projects\vsCodeFile\PBL\nba.sqlite' # 研究室PC用path
-# db_file = r'C:\Programing\PBL\nba.sqlite' # ノートPC用path
+"""## 4: Configuration and Data Loading Execution"""
+# Please modify the path according to your environment
+db_file = r'C:\Users\amilu\Projects\vsCodeFile\PBL\nba.sqlite' # Path for lab PC
+# db_file = r'C:\Programing\PBL\nba.sqlite' # Path for laptop PC
 
-# 処理する行数を設定 (Noneにすると全データを対象)
-# limit_rows = 500000 # 動作確認には50万行程度がおすすめ
-#limit_rows = 45616 # 元のコードの値
+# Set the number of rows to process (None for all data)
+# limit_rows = 500000 # About 500,000 rows are recommended for operational checks
+#limit_rows = 45616 # Original code value
 limit_rows = 225109
 # limit_rows = None
 
@@ -211,7 +211,7 @@ if df_processed is not None:
 else:
     print("Data loading failed.")
 
-"""## 5: 特徴量エンジニアリングの実行"""
+"""## 5: Feature Engineering Execution"""
 if df_processed is not None:
     print("\n--- Feature Engineering ---")
     print("Calculating total seconds elapsed...")
@@ -225,21 +225,21 @@ if df_processed is not None:
     df_processed['composite_event_id'] = (df_processed['eventmsgtype'] * 1000 + df_processed['eventmsgactiontype'])
     print("Feature Engineering complete.")
 
-"""## 6: モデル用データ準備 (フィルタリング)"""
+"""## 6: Data Preparation for Model (Filtering)"""
 if df_processed is not None:
     print("\n--- Data Preparation for Modeling ---")
     initial_rows = len(df_processed)
     model_df = df_processed.dropna(subset=['home_win', 'seconds_elapsed', 'numeric_score_margin', 'period', 'composite_event_id']).copy()
     model_df = model_df[model_df['period'] > 0]
-    model_df = model_df[model_df['eventmsgtype'] != 12] # "Start Period" イベントを除外
+    model_df = model_df[model_df['eventmsgtype'] != 12] # Exclude "Start Period" events
     filtered_rows = len(model_df)
     print(f"Rows before filtering: {initial_rows}")
     print(f"Rows after filtering invalid/unnecessary entries: {filtered_rows}")
     if filtered_rows == 0:
         print("No data left after filtering. Exiting.")
-        model_df = pd.DataFrame() # 空にして以降の処理をスキップ
+        model_df = pd.DataFrame() # Make it empty and skip subsequent processing
 
-"""## 7: 特徴量とターゲットの選択、訓練/テスト分割"""
+"""## 7: Feature and Target Selection, Train/Test Split"""
 if 'model_df' in locals() and not model_df.empty:
     print("Applying Label Encoding to 'composite_event_id'...")
     le = LabelEncoder()
@@ -266,7 +266,7 @@ if 'model_df' in locals() and not model_df.empty:
     y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
     groups_train, groups_test = groups.iloc[train_idx], groups.iloc[test_idx]
     
-    # 後で予測結果を結合するために、テストデータの元のDataFrameを保持
+    # Keep the original DataFrame of the test data to merge prediction results later
     model_df_test = model_df.iloc[test_idx].copy()
 
     print(f"Training set size: {len(X_train)}")
@@ -276,35 +276,35 @@ if 'model_df' in locals() and not model_df.empty:
 else:
     print("Skipping feature selection and train/test split as model_df is not available or empty.")
 
-"""## 8: LSTM用データへの変換 (スケーリング、パディング) - ★★★修正箇所★★★"""
+"""## 8: Data Transformation for LSTM (Scaling, Padding)"""
 if 'X_train' in locals() and not X_train.empty:
     print("\n--- Preparing Data for LSTM ---")
     
-    # 1. スケーリング
+    # 1. Scaling
     print("Scaling features...")
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
-    # スケール後のデータをDataFrameに戻して、game_idと結合
+    # Convert scaled data back to DataFrame to merge with game_id
     X_train_scaled_df = pd.DataFrame(X_train_scaled, index=X_train.index, columns=features)
     X_test_scaled_df = pd.DataFrame(X_test_scaled, index=X_test.index, columns=features)
     
-    # 2. 試合ごとにグループ化し、シーケンスを作成
+    # 2. Group by game and create sequences
     def create_padded_sequences(X_scaled_df: pd.DataFrame, y_series: pd.Series, groups_series: pd.Series) -> Tuple[np.ndarray, np.ndarray, List[int]]:
-        """試合ごとにグループ化し、シーケンスをパディングしてNumpy配列を返す"""
+        """Group by game, pad sequences, and return NumPy arrays"""
         game_ids = groups_series.unique()
         X_sequences = [X_scaled_df[groups_series == game_id].values for game_id in game_ids]
         y_sequences = [y_series[groups_series == game_id].values for game_id in game_ids]
         
-        # 元のシーケンス長を保持 (評価時にパディングを除外するため)
+        # Keep original sequence lengths (to exclude padding during evaluation)
         original_lengths = [len(seq) for seq in X_sequences]
         
-        # パディング処理
+        # Padding
         X_padded = pad_sequences(X_sequences, padding='pre', dtype='float32')
-        y_padded = pad_sequences(y_sequences, padding='pre', value=-1) # ターゲットは-1でパディング
+        y_padded = pad_sequences(y_sequences, padding='pre', value=-1) # Pad target with -1
         
-        # ターゲットの形状を (サンプル数, タイムステップ数, 1) に変換
+        # Reshape target to (samples, timesteps, 1)
         y_padded = np.expand_dims(y_padded, -1)
         
         return X_padded, y_padded, original_lengths
@@ -321,7 +321,7 @@ else:
     print("Skipping LSTM data preparation as training data is not available.")
 
 
-"""## 9: モデルの定義とコンパイル"""
+"""## 9: Model Definition and Compilation"""
 if 'X_train_scaled_lstm' in locals():
     print("\n--- Defining and Compiling Many-to-Many LSTM Model ---")
     model = Sequential([
@@ -336,29 +336,31 @@ if 'X_train_scaled_lstm' in locals():
 else:
     print("Skipping model definition as LSTM training data is not available.")
 
-"""## 10: モデルの訓練"""
+"""## 10: Model Training"""
 if 'model' in locals():
     print("\n--- Training LSTM Model ---")
+    # Set shuffle argument of model.fit to False
     early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
     history = model.fit(X_train_scaled_lstm, y_train_lstm,
                         epochs=50,
                         batch_size=16,
                         validation_split=0.2,
+                        shuffle=False, # Disable shuffling for each epoch
                         callbacks=[early_stopping])
     print("Model training complete.")
 else:
     print("Skipping model training as the model is not defined.")
 
-"""## 11: 予測と評価"""
+"""## 11: Prediction and Evaluation"""
 if 'model' in locals() and 'X_test_scaled_lstm' in locals() and X_test_scaled_lstm.size > 0:
     print("\n--- Prediction and Evaluation with Many-to-Many LSTM ---")
     y_pred_proba_3d = model.predict(X_test_scaled_lstm)
 
-    # パディングを除外して、予測値と真の値をフラットなリストに変換
+    # Exclude padding and convert predicted and true values to flat lists
     y_pred_flat = []
     y_true_flat = []
     for i, length in enumerate(test_original_lengths):
-        # シーケンスの末尾から元の長さだけ取得
+        # Get only the original length from the end of the sequence
         valid_preds = y_pred_proba_3d[i, -length:, 0]
         valid_true = y_test_lstm[i, -length:, 0]
         y_pred_flat.extend(valid_preds)
@@ -377,7 +379,7 @@ if 'model' in locals() and 'X_test_scaled_lstm' in locals() and X_test_scaled_ls
         print(f"  Log Loss:    {logloss:.4f}")
         print(f"  Brier Score: {brier:.4f}")
 
-        # 予測結果を元のテストデータフレームに追加
+        # Add prediction results to the original test DataFrame
         if len(y_pred_flat) == len(model_df_test):
             model_df_test['win_probability_pred'] = y_pred_flat
             print("\nFirst 15 rows of test data with time-varying win probability:")
@@ -389,9 +391,9 @@ if 'model' in locals() and 'X_test_scaled_lstm' in locals() and X_test_scaled_ls
         print("No data to evaluate.")
 else:
     print("Skipping prediction and evaluation as model or test data is not available.")
-    model_df_test = pd.DataFrame() # 後続処理のために空で定義
+    model_df_test = pd.DataFrame() # Define as empty for subsequent processing
 
-"""## 12: CSV出力"""
+"""## 12: CSV Output"""
 if 'model_df_test' in locals() and not model_df_test.empty:
     num_games_to_export = 3
     unique_test_games = model_df_test['game_id'].unique()
@@ -410,64 +412,64 @@ if 'model_df_test' in locals() and not model_df_test.empty:
 else:
     print("\nSkipping CSV export because the final test DataFrame ('model_df_test') is not available or is empty.")
 
-"""## 13: モメンタムの取り出し (WPA分析)"""
+"""## 13: Extracting Momentum (WPA Analysis)"""
 if 'model_df_test' in locals() and not model_df_test.empty and 'le' in locals():
     print("\n--- Calculating Win Probability Added (WPA) for each event ---")
     
     event_id_to_name_map = {
-        # --- 基本カテゴリ（データに存在しないIDのフォールバック用） ---
-        1000: 'FG成功(その他)', 
-        2000: 'FG失敗(その他)', 
-        3000: 'フリースロー(その他)', 
-        4000: 'リバウンド',
-        5000: 'ターンオーバー(その他)', 
-        6000: 'ファウル(その他)', 
-        7000: 'バイオレーション', 
-        8000: '選手交代',
-        9000: 'タイムアウト', 
-        10000: 'ジャンプボール', 
-        11000: '退場', 
-        12000: 'ピリオド開始',
-        13000: 'ピリオド終了', 
-        18000: 'その他',
+        # --- Base Categories (Fallback for IDs not in detailed data) ---
+        1000: 'Made FG (Other)', 
+        2000: 'Missed FG (Other)', 
+        3000: 'Free Throw (Other)', 
+        4000: 'Rebound',
+        5000: 'Turnover (Other)', 
+        6000: 'Foul (Other)', 
+        7000: 'Violation', 
+        8000: 'Substitution',
+        9000: 'Timeout', 
+        10000: 'Jump Ball', 
+        11000: 'Ejection', 
+        12000: 'Start of Period',
+        13000: 'End of Period', 
+        18000: 'Other',
 
-        # --- 詳細アクション（今回の分析結果を反映） ---
-        # ショット成功 (Type 1)
-        1001: 'ジャンプショット成功',
-        1002: 'ランニング/フローター成功',  # 分析により追加
-        1003: 'スラムダンク成功',         # 分析により追加
-        1005: 'レイアップ成功',
-        1006: 'フックショット成功',       # 分析により追加
-        1007: 'ティップイン/アリウープ成功', # 分析により追加
+        # --- Detailed Actions (Reflecting current analysis) ---
+        # Made Shot (Type 1)
+        1001: 'Made Jump Shot',
+        1002: 'Made Running/Floater Shot',
+        1003: 'Made Slam Dunk',
+        1005: 'Made Layup',
+        1006: 'Made Hook Shot',
+        1007: 'Made Tip-in/Alley-oop',
 
-        # ショット失敗 (Type 2)
-        2001: 'ジャンプショット失敗',
-        2002: 'ランニング系ショット失敗',   # 分析により追加
-        2005: 'レイアップ失敗',
-        2006: 'フックショット失敗',       # 分析により追加
+        # Missed Shot (Type 2)
+        2001: 'Missed Jump Shot',
+        2002: 'Missed Running Shot',
+        2005: 'Missed Layup',
+        2006: 'Missed Hook Shot',
 
-        # フリースロー (Type 3)
-        3010: 'フリースロー成功 (1st/2nd)', # 表現を更新
-        3011: 'フリースロー成功 (2nd/3rd)', # 表現を更新
-        3012: 'フリースロー失敗',
-        3013: 'テクニカルフリースロー成功', # 分析により追加
+        # Free Throw (Type 3)
+        3010: 'Made Free Throw (1st/2nd)',
+        3011: 'Made Free Throw (2nd/3rd)',
+        3012: 'Missed Free Throw',
+        3013: 'Made Technical Free Throw',
 
-        # ターンオーバー (Type 5)
-        5001: 'スティール',              # 分析により追加
-        5002: 'ボールロスト/パスミス',     # 表現を更新
-        5004: 'オフェンスファウル/バイオレーション', # 表現を更新
+        # Turnover (Type 5)
+        5001: 'Steal',
+        5002: 'Lost Ball/Bad Pass',
+        5004: 'Offensive Foul/Violation',
 
-        # ファウル (Type 6)
-        6001: 'パーソナルファウル',
-        6002: 'シューティングファウル',
-        6003: 'オフェンスチャージングファウル' # 分析により更新
+        # Foul (Type 6)
+        6001: 'Personal Foul',
+        6002: 'Shooting Foul',
+        6003: 'Offensive Charge Foul'
     }
 
-    # LabelEncoderのエンコード後の値(0,1,2...)から元の複合ID(1001, 1005...)を取得
+    # Get original composite ID (1001, 1005...) from LabelEncoder's encoded values (0,1,2...)
     encoded_label_to_original_id_map = {i: original_id for i, original_id in enumerate(le.classes_)}
-    # エンコード後の値からイベント名へのマッピング辞書を作成
+    # Create a mapping dictionary from encoded values to event names
     encoded_label_to_name_map = {
-        encoded_label: event_id_to_name_map.get(original_id, f'不明なID({original_id})')
+        encoded_label: event_id_to_name_map.get(original_id, f'Unknown ID ({original_id})')
         for encoded_label, original_id in encoded_label_to_original_id_map.items()
     }
 
@@ -480,27 +482,27 @@ if 'model_df_test' in locals() and not model_df_test.empty and 'le' in locals():
     event_impact['event_name'] = event_impact.index.map(encoded_label_to_name_map)
     event_impact = event_impact.sort_values(by='mean', ascending=False)
 
-    print("\n--- 詳細なイベントごとのWPAインパクト Top15 ---")
-    print("\n[勝率を最も高めたイベント (ホームチーム)]")
+    print("\n--- Detailed WPA Impact per Event (Top 15) ---")
+    print("\n[Events that most increased win probability (Home Team)]")
     print(event_impact.head(15))
-    print("\n[勝率を最も下げたイベント (ホームチーム)]")
+    print("\n[Events that most decreased win probability (Home Team)]")
     print(event_impact.tail(15).sort_values(by='mean'))
 
     event_impact_filtered = event_impact[event_impact['count'] >= 5]
     if not event_impact_filtered.empty:
         plt.style.use('seaborn-v0_8-whitegrid')
         fig, axes = plt.subplots(1, 2, figsize=(20, 12))
-        fig.suptitle('詳細イベントごとの平均WPAインパクト (発生回数5回以上)', fontsize=18)
+        fig.suptitle('Average WPA Impact per Detailed Event (Occurrences >= 5)', fontsize=18)
         top_events = event_impact_filtered.head(15)
-        sns.barplot(ax=axes[0], x=top_events['mean'], y=top_events['event_name'], palette='Greens_r')
-        axes[0].set_title('勝率を上げるイベント Top 15')
-        axes[0].set_xlabel('平均WPAインパクト (勝率上昇)')
-        axes[0].set_ylabel('イベント名')
+        sns.barplot(ax=axes[0], x=top_events['mean'], y=top_events['event_name'], hue=top_events['event_name'], palette='Greens_r', legend=False)
+        axes[0].set_title('Top 15 Events Increasing Win Probability')
+        axes[0].set_xlabel('Average WPA Impact (Win Probability Increase)')
+        axes[0].set_ylabel('Event Name')
         bottom_events = event_impact_filtered.tail(15).sort_values(by='mean', ascending=True)
-        sns.barplot(ax=axes[1], x=bottom_events['mean'], y=bottom_events['event_name'], palette='Reds')
-        axes[1].set_title('勝率を下げるイベント Top 15')
-        axes[1].set_xlabel('平均WPAインパクト (勝率下降)')
-        axes[1].set_ylabel('')
+        sns.barplot(ax=axes[1], x=bottom_events['mean'], y=bottom_events['event_name'], hue=bottom_events['event_name'], palette='Reds', legend=False)
+        axes[1].set_title('Top 15 Events Decreasing Win Probability')
+        axes[1].set_xlabel('Average WPA Impact (Win Probability Decrease)')
+        axes[1].set_ylabel('') # No y-axis label for the second plot
         plt.tight_layout(rect=[0, 0, 1, 0.96])
         plt.show()
     else:
@@ -508,4 +510,4 @@ if 'model_df_test' in locals() and not model_df_test.empty and 'le' in locals():
 else:
     print("\nSkipping WPA analysis because the final test DataFrame ('model_df_test') is not available or is empty.")
 
-print("\n--- Win probability prediction notebook execution finished ---")
+print("\n--- Win probability prediction script execution finished ---")
