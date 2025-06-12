@@ -1,0 +1,76 @@
+# model_trainer.py
+import pandas as pd
+import lightgbm as lgb
+from sklearn.model_selection import GroupShuffleSplit, train_test_split
+from sklearn.metrics import accuracy_score, roc_auc_score, log_loss, brier_score_loss, classification_report
+
+def prepare_data_for_model(df: pd.DataFrame) -> pd.DataFrame:
+    """モデル投入用にデータをフィルタリングする"""
+    print("\n--- モデル用データ準備 ---")
+    initial_rows = len(df)
+    
+    model_df = df.dropna(
+        subset=['home_win', 'seconds_elapsed', 'numeric_score_margin', 'period', 'composite_event_id']
+    ).copy()
+    model_df = model_df[model_df['period'] > 0]
+    model_df = model_df[model_df['eventmsgtype'] != 12] # ピリオド開始イベントを除外
+
+    filtered_rows = len(model_df)
+    print(f"フィルタリング: {initial_rows}行 -> {filtered_rows}行")
+    return model_df
+
+def split_data(df: pd.DataFrame, features: list, target: str) -> tuple:
+    """データを訓練用とテスト用に分割する"""
+    print("\n--- データ分割 ---")
+    X = df[features]
+    y = df[target].astype(int)
+    groups = df['game_id']
+
+    # エンコーディングとは無関係な分析用のIDを保持
+    df['original_composite_event_id'] = df['composite_event_id']
+
+    gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+    train_idx, test_idx = next(gss.split(X, y, groups=groups))
+
+    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+    y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+    
+    model_df_test = df.iloc[test_idx].copy()
+
+    print(f"Training set size: {len(X_train)}")
+    print(f"Testing set size: {len(X_test)}")
+    return X_train, X_test, y_train, y_test, model_df_test
+
+def train_and_evaluate(X_train, y_train, X_test, y_test, params, categorical_features) -> tuple:
+    """LightGBMモデルの訓練、評価、予測を行う"""
+    print("\n--- LightGBMモデルの訓練と評価 ---")
+    lgb_train = lgb.Dataset(X_train, y_train, categorical_feature=categorical_features)
+    lgb_eval = lgb.Dataset(X_test, y_test, reference=lgb_train, categorical_feature=categorical_features)
+
+    print("モデルの訓練を開始...")
+    model = lgb.train(
+        params,
+        lgb_train,
+        valid_sets=[lgb_train, lgb_eval],
+        callbacks=[lgb.early_stopping(100, verbose=True), lgb.log_evaluation(100)]
+    )
+    print("モデルの訓練が完了しました。")
+
+    y_pred_proba = model.predict(X_test, num_iteration=model.best_iteration)
+    
+    # P(home_loss)をP(home_win)に変換
+    print("予測確率を P(home_loss) から P(home_win) に変換します。")
+    y_pred_proba = 1 - y_pred_proba
+    
+    y_pred_class = (y_pred_proba > 0.5).astype(int)
+
+    # 評価指標の表示
+    print("\n--- LightGBMモデル評価結果 ---")
+    print(f"  Accuracy:    {accuracy_score(y_test, y_pred_class):.4f}")
+    print(f"  ROC AUC:     {roc_auc_score(y_test, y_pred_proba):.4f}")
+    print(f"  Log Loss:    {log_loss(y_test, y_pred_proba):.4f}")
+    print(f"  Brier Score: {brier_score_loss(y_test, y_pred_proba):.4f}")
+    print("\n--- 分類レポート ---")
+    print(classification_report(y_test, y_pred_class))
+
+    return model, y_pred_proba
