@@ -262,7 +262,41 @@ event_id_to_name_map = {
     11000: '退場',
     12000: 'ピリオド開始',
     13000: 'ピリオド終了',
-    18000: 'その他'
+    18000: 'その他',
+    1002: 'ドライビングジャンプショット成功',
+    1003: 'ドライビングフックショット成功',
+    1004: 'ターニングジャンプショット成功',
+    1006: 'ステップバックジャンプショット成功',
+    1008: 'フローティングジャンプショット成功',
+    1009: 'プルアップバンクショット成功',
+    2008: 'ドライビングフックショット失敗',
+    3016: 'FT 2/3 成功',
+    3018: 'FT 3/3 成功',
+    3019: 'テクニカルFT成功',
+    4001: 'オフェンスリバウンド', # これは後で文脈で判断
+    5005: 'オフェンスファウル ターンオーバー',
+    5006: 'バッドパス アウトオブバウンズ',
+    5008: 'ステップアウトオブバウンズ ターンオーバー',
+    5009: 'ボールロスト アウトオブバウンズ',
+    5012: 'レーンバイオレーション ターンオーバー',
+    5013: 'パーソナルファウル ターンオーバー',
+    5014: 'ダブルパーソナル ターンオーバー',
+    5015: 'ファウル ターンオーバー',
+    5017: 'キックボール ターンオーバー',
+    6006: 'アウェイチャレンジ', # 不正確かも
+    6009: 'フレグラントファウル1',
+    6011: 'オフェンスチャージファウル',
+    6013: 'パーソナルブロックファウル',
+    6014: 'パーソナルテイクファウル',
+    6017: 'シューティングブロックファウル',
+    6018: 'ホームチャレンジ', # 不正確かも
+    7003: 'ジャンプボールバイオレーション',
+    7004: 'キックボールバイオレーション',
+    7005: 'レーンバイオレーション',
+    7006: 'ディフェンシブゴールテンディング',
+    9004: 'チャレンジによるタイムアウト',
+    11001: '退場(ファウルアウト)',
+    11004: '退場(テクニカルファウル)',
     }
 
 df_processed = load_and_process_pbp(db_file, limit_rows=limit_rows)
@@ -277,6 +311,79 @@ numeric_score_margin列に数値化した得点差を格納
 seconds_elapsed列に試合開始からの総経過時間を格納
 composite_event_id列に複合IDを格納
 """
+def assign_contextual_event_ids(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    descriptionの内容を解析し、イベントの真の主体を判断して
+    home_event_id と visitor_event_id を割り当てる。
+    """
+    print("文脈を考慮したイベントIDの割り当てを開始...")
+
+    # 事前にdescriptionを文字列と大文字に変換
+    home_desc = df['homedescription'].fillna('').str.upper()
+    visit_desc = df['visitordescription'].fillna('').str.upper()
+    base_event_id = (df['eventmsgtype'] * 1000 + df['eventmsgactiontype']).fillna(0).astype(int)
+
+    # 結果を格納する新しい列を0で初期化
+    home_ids = pd.Series(0, index=df.index)
+    visitor_ids = pd.Series(0, index=df.index)
+
+    # 1. シュート成功 (eventmsgtype=1), シュート失敗 (eventmsgtype=2), フリースロー (eventmsgtype=3)
+    # これらは通常、主体が明確
+    is_shot_or_ft = df['eventmsgtype'].isin([1, 2, 3])
+    home_action_shot = is_shot_or_ft & (home_desc != '') & (visit_desc == '')
+    visitor_action_shot = is_shot_or_ft & (visit_desc != '') & (home_desc == '')
+    home_ids.loc[home_action_shot] = base_event_id[home_action_shot]
+    visitor_ids.loc[visitor_action_shot] = base_event_id[visitor_action_shot]
+
+    # 2. リバウンド (eventmsgtype=4) - "REBOUND" を含む側が主体
+    is_rebound = df['eventmsgtype'] == 4
+    home_rebound = is_rebound & home_desc.str.contains("REBOUND")
+    visitor_rebound = is_rebound & visit_desc.str.contains("REBOUND")
+    home_ids.loc[home_rebound] = base_event_id[home_rebound]
+    visitor_ids.loc[visitor_rebound] = base_event_id[visitor_rebound]
+
+    # 3. ターンオーバー (eventmsgtype=5) - "STEAL" をした側がポジティブなアクション
+    is_turnover = df['eventmsgtype'] == 5
+    home_steal = is_turnover & home_desc.str.contains("STEAL") # ホームがスティール -> アウェイのTO
+    visitor_steal = is_turnover & visit_desc.str.contains("STEAL") # アウェイがスティール -> ホームのTO
+    visitor_ids.loc[home_steal] = base_event_id[home_steal] # アウェイチームのイベントとして記録
+    home_ids.loc[visitor_steal] = base_event_id[visitor_steal] # ホームチームのイベントとして記録
+
+    # スティール以外のターンオーバー (例: Lost Ball, Traveling)
+    # "TURNOVER" という単語が記述されている側がミスをしたと判断
+    no_steal_turnover = is_turnover & ~home_steal & ~visitor_steal
+    home_turnover_no_steal = no_steal_turnover & home_desc.str.contains("TURNOVER")
+    visitor_turnover_no_steal = no_steal_turnover & visit_desc.str.contains("TURNOVER")
+    home_ids.loc[home_turnover_no_steal] = base_event_id[home_turnover_no_steal]
+    visitor_ids.loc[visitor_turnover_no_steal] = base_event_id[visitor_turnover_no_steal]
+
+    # 4. ファウル (eventmsgtype=6) - "FOUL" を含む側が主体
+    is_foul = df['eventmsgtype'] == 6
+    home_foul = is_foul & home_desc.str.contains("FOUL")
+    visitor_foul = is_foul & visit_desc.str.contains("FOUL")
+    home_ids.loc[home_foul] = base_event_id[home_foul]
+    visitor_ids.loc[visitor_foul] = base_event_id[visitor_foul]
+
+    # 5. その他のイベント (タイムアウト、交代など) - 主体が明確な場合が多い
+    is_other_event = ~df['eventmsgtype'].isin([1,2,3,4,5,6])
+    home_other = is_other_event & (home_desc != '')
+    visitor_other = is_other_event & (visit_desc != '')
+    home_ids.loc[home_other] = base_event_id[home_other]
+    visitor_ids.loc[visitor_other] = base_event_id[visitor_other]
+    
+    # 割り当てられなかったイベントで片方しか記述がないものは、そちらのイベントとする
+    unassigned = (home_ids == 0) & (visitor_ids == 0)
+    home_ids.loc[unassigned & (home_desc != '') & (visit_desc == '')] = base_event_id[unassigned & (home_desc != '') & (visit_desc == '')]
+    visitor_ids.loc[unassigned & (visit_desc != '') & (home_desc == '')] = base_event_id[unassigned & (visit_desc != '') & (home_desc == '')]
+
+
+    df['home_event_id'] = home_ids
+    df['visitor_event_id'] = visitor_ids
+    df['composite_event_id'] = base_event_id # 元のIDも保持
+    
+    print("イベントIDの割り当て完了。")
+    return df
+
 if df_processed is not None:
     print("\n--- 特徴量エンジニアリング ---")
     print("総経過時間を計算中")
@@ -286,42 +393,14 @@ if df_processed is not None:
     print("numeriC_score_marginをマッチング")
     df_processed = df_processed.sort_values(by=['game_id', 'eventnum'])
     df_processed['numeric_score_margin'] = df_processed.groupby('game_id')['numeric_score_margin'].ffill()
-    
-    print("ホーム/アウェイ別のイベントIDを生成中（相互排他）")
-    base_event_id = (df_processed['eventmsgtype'] * 1000 + df_processed['eventmsgactiontype']).fillna(0).astype(int)
-    
-    # 事前にdescriptionを文字列に変換しておく
-    home_desc_str = df_processed['homedescription'].fillna('').str.upper()
-    visit_desc_str = df_processed['visitordescription'].fillna('').str.upper()
 
-    # デフォルトは0で初期化
-    df_processed['home_event_id'] = 0
-    df_processed['visitor_event_id'] = 0
+    # visitor - home を home - visitor に変換
+    print("得点差の正負を標準的な表記 (home - visitor) に修正中...")
+    df_processed['numeric_score_margin'] = df_processed['numeric_score_margin'] * -1
 
-    # 条件分岐でIDを割り当て
-    # 1. ホームのみ記述がある場合
-    cond_home_only = (home_desc_str != '') & (visit_desc_str == '')
-    df_processed.loc[cond_home_only, 'home_event_id'] = base_event_id[cond_home_only]
+    # 新しい関数でイベントIDを生成
+    df_processed = assign_contextual_event_ids(df_processed)
 
-    # 2. アウェイのみ記述がある場合
-    cond_visitor_only = (home_desc_str == '') & (visit_desc_str != '')
-    df_processed.loc[cond_visitor_only, 'visitor_event_id'] = base_event_id[cond_visitor_only]
-
-    # 3. 両方に記述がある場合の特別ルール
-    cond_both = (home_desc_str != '') & (visit_desc_str != '')
-    
-    # 3a. ファウル(6) or ターンオーバー(5) の場合
-    is_foul_or_to = df_processed['eventmsgtype'].isin([5, 6])
-    # アウェイ側の記述に "FOUL" or "TURNOVER" があればアウェイのイベント
-    cond_visitor_actor = cond_both & is_foul_or_to & (visit_desc_str.str.contains('FOUL|TURNOVER'))
-    df_processed.loc[cond_visitor_actor, 'visitor_event_id'] = base_event_id[cond_visitor_actor]
-    # それ以外で両方に記述がある場合は、ホームのイベントとする（デフォルト）
-    cond_home_actor = cond_both & ~cond_visitor_actor
-    df_processed.loc[cond_home_actor, 'home_event_id'] = base_event_id[cond_home_actor]
-    
-    
-    # 分析用に元の複合IDも保持
-    df_processed['composite_event_id'] = base_event_id
     print("特徴量エンジニアリング完了")
 
 """## 6: モデル用データ準備 (フィルタリング)
@@ -422,6 +501,8 @@ if 'X_train' in locals() and not X_train.empty and not X_test.empty:
     # テストデータで予測
     # 最も性能が良かったイテレーションで予測
     y_pred_proba = model.predict(X_test, num_iteration=model.best_iteration)
+    print("予測確率を P(home_loss) から P(home_win) = 1 - P(home_loss) に変換します。")
+    y_pred_proba = 1 - y_pred_proba
     y_pred_class = (y_pred_proba > 0.5).astype(int)
 
     # モデルの評価
@@ -450,39 +531,34 @@ else:
     print("\n訓練データまたはテストデータが空のため、LightGBMの訓練をスキップします。")
 
 """##9イベント別モメンタムの集計と可視化"""
+# --- 修正後のセクション9 ---
+
 if 'model_df_test' in locals() and 'win_probability_pred' in model_df_test.columns:
-    print("\n--- イベント別モメンタム分析 ---")
-    
-    # 分析用のデータフレームを準備
-    # 必ずgame_idとeventnumでソートし、プレーの順序を正しくする
+    print("\n--- イベント別モメンタム分析 (修正版) ---")
+
     results_df = model_df_test.sort_values(by=['game_id', 'eventnum']).copy()
-
-    # 各プレーの「直前のプレー」の勝率を計算 (同じ試合内でのみ)
-    # game_idでグループ化し、shift(1)で1つ前の行の値を取得
     results_df['prev_win_prob'] = results_df.groupby('game_id')['win_probability_pred'].shift(1)
-    
-    # プレー前後での勝率の変化を計算
     results_df['win_prob_change'] = results_df['win_probability_pred'] - results_df['prev_win_prob']
-    
-    # 勝率変化を計算できなかった行（各試合の最初のプレー）は除外
     momentum_df = results_df.dropna(subset=['win_prob_change'])
-    
-    # 元の複合IDごとに、勝率変化の平均値とイベントの発生回数を集計
-    event_momentum = momentum_df.groupby('original_composite_event_id')['win_prob_change'].agg(['mean', 'count']).reset_index()
-    event_momentum.rename(columns={'mean': 'avg_win_prob_change', 'count': 'event_count'}, inplace=True)
-    
-    event_momentum['event_name'] = event_momentum['original_composite_event_id'].map(event_id_to_name_map).fillna('Unknown Event')
-    
-    # 勝率への影響（モメンタム）が大きい順にソート
-    event_momentum_sorted = event_momentum.sort_values(by='avg_win_prob_change', ascending=False)
-    
-    print("\n--- 複合ID別 平均勝率変動（モメンタム）ランキング ---")
-    # 分析結果から 'Unknown Event' の行を除外する
-    known_events_momentum = event_momentum_sorted[event_momentum_sorted['event_name'] != 'Unknown Event'].copy()
-    
-    # 結果を見やすくするために、表示列を絞る
-    display_cols = ['event_name', 'avg_win_prob_change', 'event_count', 'original_composite_event_id']
-    print(known_events_momentum[display_cols].to_string())
 
-else:
-    print("\n予測結果を含むテストデータが見つからないため、モメンタム分析をスキップします。")
+    # --- 1. ホームチームのイベントが勝率に与える影響 ---
+    home_events = momentum_df[momentum_df['home_event_id'] != 0].copy()
+    home_momentum = home_events.groupby('home_event_id')['win_prob_change'].agg(['mean', 'count']).reset_index()
+    home_momentum.rename(columns={'mean': 'avg_win_prob_change', 'count': 'event_count', 'home_event_id': 'event_id'}, inplace=True)
+    home_momentum['event_name'] = home_momentum['event_id'].map(event_id_to_name_map).fillna('Unknown Event')
+    home_momentum_sorted = home_momentum.sort_values(by='avg_win_prob_change', ascending=False)
+
+    print("\n--- 【ホームチームのイベント】が勝率に与える影響ランキング ---")
+    display_cols = ['event_name', 'avg_win_prob_change', 'event_count', 'event_id']
+    print(home_momentum_sorted[display_cols].to_string())
+
+
+    # --- 2. アウェイチームのイベントがホームチームの勝率に与える影響 ---
+    visitor_events = momentum_df[momentum_df['visitor_event_id'] != 0].copy()
+    visitor_momentum = visitor_events.groupby('visitor_event_id')['win_prob_change'].agg(['mean', 'count']).reset_index()
+    visitor_momentum.rename(columns={'mean': 'avg_win_prob_change', 'count': 'event_count', 'visitor_event_id': 'event_id'}, inplace=True)
+    visitor_momentum['event_name'] = visitor_momentum['event_id'].map(event_id_to_name_map).fillna('Unknown Event')
+    visitor_momentum_sorted = visitor_momentum.sort_values(by='avg_win_prob_change', ascending=False)
+
+    print("\n--- 【アウェイチームのイベント】がホームチームの勝率に与える影響ランキング ---")
+    print(visitor_momentum_sorted[display_cols].to_string())
