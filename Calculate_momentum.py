@@ -202,6 +202,69 @@ db_file = 'nba.sqlite'
 limit_rows = 225109 # 元のコードの値
 # limit_rows = None
 
+# 複合IDをイベント名に変換
+event_id_to_name_map = {
+    1000: 'FG成功(その他)',
+    1001: 'ジャンプショット成功',
+    1005: 'レイアップ成功',
+    1007: 'ダンク成功',
+    1041: 'アリウープ成功',
+    1042: 'ドライビングレイアップ成功',
+    1050: 'ランニングダンク成功',
+    1052: 'アリウープダンク成功',
+    1055: 'フックショット成功',
+    1066: 'ジャンプバンクショット成功',
+    1108: 'カッティングダンクショット成功',
+    2000: 'FG失敗(その他)',
+    2001: 'ジャンプショット失敗',
+    2002: 'プルアップジャンプショット失敗', # 追加
+    2003: 'ドライビングレイアップ失敗',  # 追加
+    2004: 'ドライビングダンク失敗',      # 追加
+    2005: 'レイアップ失敗',
+    2006: 'ランニングレイアップ失敗',    # 追加
+    2007: 'ダンク失敗',
+    2009: 'フックショット失敗',        # 追加
+    3000: 'フリースロー',
+    3010: 'フリースロー1本目成功',
+    3011: 'フリースロー2本目成功',
+    3012: 'フリースロー失敗',
+    3013: 'FT 1/2 失敗',             # 追加
+    3014: 'FT 2/2 失敗',             # 追加
+    3015: 'FT 1/3 失敗',             # 追加
+    3017: 'FT 3/3 失敗',             # 追加
+    4000: 'リバウンド',
+    5000: 'ターンオーバー(その他)',
+    5001: 'パスミス ターンオーバー',     # 追加
+    5002: 'ボールロスト',
+    5003: 'ボールロスト ターンオーバー', # 追加
+    5004: 'トラベリング/オフェンシブファウル',
+    5007: 'ショットクロック ターンオーバー', # 追加
+    5011: 'オフェンス・ゴールテンディング', # 追加
+    5040: 'アウトオブバウンズ',
+    6000: 'ファウル(その他)',
+    6001: 'パーソナルファウル',
+    6002: 'シューティングファウル',
+    6003: 'テクニカルファウル',
+    6004: 'ルーズボールファウル',       # 追加
+    6005: 'インバウンドファウル',       # 追加
+    6009: 'フレグラントファウル1',     # 追加
+    6011: 'オフェンスチャージファウル',  # 追加
+    7000: 'バイオレーション',
+    7001: 'ダブルドリブル',            # 追加
+    7002: 'ドリブル中断バイオレーション',# 追加
+    7004: 'キックボール',              # 追加
+    8000: '選手交代',
+    9000: 'タイムアウト',
+    9001: '通常タイムアウト',          # 追加
+    9002: 'ショートタイムアウト',        # 追加
+    9003: 'オフィシャルタイムアウト',    # 追加
+    10000: 'ジャンプボール',
+    11000: '退場',
+    12000: 'ピリオド開始',
+    13000: 'ピリオド終了',
+    18000: 'その他'
+    }
+
 df_processed = load_and_process_pbp(db_file, limit_rows=limit_rows)
 
 if df_processed is not None:
@@ -223,8 +286,42 @@ if df_processed is not None:
     print("numeriC_score_marginをマッチング")
     df_processed = df_processed.sort_values(by=['game_id', 'eventnum'])
     df_processed['numeric_score_margin'] = df_processed.groupby('game_id')['numeric_score_margin'].ffill()
-    print("複合IDを生成中")
-    df_processed['composite_event_id'] = (df_processed['eventmsgtype'] * 1000 + df_processed['eventmsgactiontype'])
+    
+    print("ホーム/アウェイ別のイベントIDを生成中（相互排他）")
+    base_event_id = (df_processed['eventmsgtype'] * 1000 + df_processed['eventmsgactiontype']).fillna(0).astype(int)
+    
+    # 事前にdescriptionを文字列に変換しておく
+    home_desc_str = df_processed['homedescription'].fillna('').str.upper()
+    visit_desc_str = df_processed['visitordescription'].fillna('').str.upper()
+
+    # デフォルトは0で初期化
+    df_processed['home_event_id'] = 0
+    df_processed['visitor_event_id'] = 0
+
+    # 条件分岐でIDを割り当て
+    # 1. ホームのみ記述がある場合
+    cond_home_only = (home_desc_str != '') & (visit_desc_str == '')
+    df_processed.loc[cond_home_only, 'home_event_id'] = base_event_id[cond_home_only]
+
+    # 2. アウェイのみ記述がある場合
+    cond_visitor_only = (home_desc_str == '') & (visit_desc_str != '')
+    df_processed.loc[cond_visitor_only, 'visitor_event_id'] = base_event_id[cond_visitor_only]
+
+    # 3. 両方に記述がある場合の特別ルール
+    cond_both = (home_desc_str != '') & (visit_desc_str != '')
+    
+    # 3a. ファウル(6) or ターンオーバー(5) の場合
+    is_foul_or_to = df_processed['eventmsgtype'].isin([5, 6])
+    # アウェイ側の記述に "FOUL" or "TURNOVER" があればアウェイのイベント
+    cond_visitor_actor = cond_both & is_foul_or_to & (visit_desc_str.str.contains('FOUL|TURNOVER'))
+    df_processed.loc[cond_visitor_actor, 'visitor_event_id'] = base_event_id[cond_visitor_actor]
+    # それ以外で両方に記述がある場合は、ホームのイベントとする（デフォルト）
+    cond_home_actor = cond_both & ~cond_visitor_actor
+    df_processed.loc[cond_home_actor, 'home_event_id'] = base_event_id[cond_home_actor]
+    
+    
+    # 分析用に元の複合IDも保持
+    df_processed['composite_event_id'] = base_event_id
     print("特徴量エンジニアリング完了")
 
 """## 6: モデル用データ準備 (フィルタリング)
@@ -234,9 +331,11 @@ model_dfにフィルター後のデータフレームが格納される。
 if df_processed is not None:
     print("\n--- モデル用データ準備 ---")
     initial_rows = len(df_processed)
+
     model_df = df_processed.dropna(subset=['home_win', 'seconds_elapsed', 'numeric_score_margin', 'period', 'composite_event_id']).copy()
     model_df = model_df[model_df['period'] > 0]
     model_df = model_df[model_df['eventmsgtype'] != 12]
+
     filtered_rows = len(model_df)
     print(f"フィルタリング前の列数: {initial_rows}")
     print(f"フィルタリング後の列数: {filtered_rows}")
@@ -252,7 +351,7 @@ if 'model_df' in locals() and not model_df.empty:
     le = LabelEncoder()
     model_df['composite_event_id'] = le.fit_transform(model_df['composite_event_id'])
     
-    features = ['numeric_score_margin', 'seconds_elapsed', 'composite_event_id']
+    features = ['numeric_score_margin', 'seconds_elapsed', 'home_event_id', 'visitor_event_id']
     target = 'home_win'
     print(f"\n使用特徴量: {features}")
 
@@ -288,8 +387,8 @@ if 'X_train' in locals() and not X_train.empty and not X_test.empty:
     print("\n--- LightGBMモデルの訓練と評価 ---")
     
     # LightGBM用のデータセットを作成
-    # categorical_featureにカテゴリとして扱いたい列名を指定するのがポイント
-    categorical_features = ['composite_event_id']
+    # categorical_featureにカテゴリとして扱いたい列名を指定
+    categorical_features = ['home_event_id', 'visitor_event_id']
     lgb_train = lgb.Dataset(X_train, y_train, categorical_feature=categorical_features, free_raw_data=False)
     lgb_eval = lgb.Dataset(X_test, y_test, reference=lgb_train, categorical_feature=categorical_features, free_raw_data=False)
 
@@ -372,77 +471,18 @@ if 'model_df_test' in locals() and 'win_probability_pred' in model_df_test.colum
     event_momentum = momentum_df.groupby('original_composite_event_id')['win_prob_change'].agg(['mean', 'count']).reset_index()
     event_momentum.rename(columns={'mean': 'avg_win_prob_change', 'count': 'event_count'}, inplace=True)
     
-    # 複合IDをイベント名に変換
-    event_id_to_name_map = {
-    1000: 'FG成功(その他)',
-    1001: 'ジャンプショット成功',
-    1005: 'レイアップ成功',
-    1007: 'ダンク成功',
-    1041: 'アリウープ成功',
-    1042: 'ドライビングレイアップ成功',
-    1050: 'ランニングダンク成功',
-    1052: 'アリウープダンク成功',
-    1055: 'フックショット成功',
-    1066: 'ジャンプバンクショット成功',
-    1108: 'カッティングダンクショット成功',
-    2000: 'FG失敗(その他)',
-    2001: 'ジャンプショット失敗',
-    2002: 'プルアップジャンプショット失敗', # 追加
-    2003: 'ドライビングレイアップ失敗',  # 追加
-    2004: 'ドライビングダンク失敗',      # 追加
-    2005: 'レイアップ失敗',
-    2006: 'ランニングレイアップ失敗',    # 追加
-    2007: 'ダンク失敗',
-    2009: 'フックショット失敗',        # 追加
-    3000: 'フリースロー',
-    3010: 'フリースロー1本目成功',
-    3011: 'フリースロー2本目成功',
-    3012: 'フリースロー失敗',
-    3013: 'FT 1/2 失敗',             # 追加
-    3014: 'FT 2/2 失敗',             # 追加
-    3015: 'FT 1/3 失敗',             # 追加
-    3017: 'FT 3/3 失敗',             # 追加
-    4000: 'リバウンド',
-    5000: 'ターンオーバー(その他)',
-    5001: 'パスミス ターンオーバー',     # 追加
-    5002: 'ボールロスト',
-    5003: 'ボールロスト ターンオーバー', # 追加
-    5004: 'トラベリング/オフェンシブファウル',
-    5007: 'ショットクロック ターンオーバー', # 追加
-    5011: 'オフェンス・ゴールテンディング', # 追加
-    5040: 'アウトオブバウンズ',
-    6000: 'ファウル(その他)',
-    6001: 'パーソナルファウル',
-    6002: 'シューティングファウル',
-    6003: 'テクニカルファウル',
-    6004: 'ルーズボールファウル',       # 追加
-    6005: 'インバウンドファウル',       # 追加
-    6009: 'フレグラントファウル1',     # 追加
-    6011: 'オフェンスチャージファウル',  # 追加
-    7000: 'バイオレーション',
-    7001: 'ダブルドリブル',            # 追加
-    7002: 'ドリブル中断バイオレーション',# 追加
-    7004: 'キックボール',              # 追加
-    8000: '選手交代',
-    9000: 'タイムアウト',
-    9001: '通常タイムアウト',          # 追加
-    9002: 'ショートタイムアウト',        # 追加
-    9003: 'オフィシャルタイムアウト',    # 追加
-    10000: 'ジャンプボール',
-    11000: '退場',
-    12000: 'ピリオド開始',
-    13000: 'ピリオド終了',
-    18000: 'その他'
-    }
     event_momentum['event_name'] = event_momentum['original_composite_event_id'].map(event_id_to_name_map).fillna('Unknown Event')
     
     # 勝率への影響（モメンタム）が大きい順にソート
     event_momentum_sorted = event_momentum.sort_values(by='avg_win_prob_change', ascending=False)
     
     print("\n--- 複合ID別 平均勝率変動（モメンタム）ランキング ---")
+    # 分析結果から 'Unknown Event' の行を除外する
+    known_events_momentum = event_momentum_sorted[event_momentum_sorted['event_name'] != 'Unknown Event'].copy()
+    
     # 結果を見やすくするために、表示列を絞る
     display_cols = ['event_name', 'avg_win_prob_change', 'event_count', 'original_composite_event_id']
-    print(event_momentum_sorted[display_cols].to_string())
+    print(known_events_momentum[display_cols].to_string())
 
 else:
     print("\n予測結果を含むテストデータが見つからないため、モメンタム分析をスキップします。")
