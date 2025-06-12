@@ -10,6 +10,14 @@ Thumbs.db
 *.class
 *.pyc
 
+# Ignore Excel files
+*.xlsx
+
+# Ignore SQLite database files
+*.sqlite
+
+*.csv
+
 # Node.js
 node_modules/
 npm-debug.log
