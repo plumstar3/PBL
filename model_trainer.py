@@ -59,8 +59,8 @@ def train_and_evaluate(X_train, y_train, X_test, y_test, params, categorical_fea
     y_pred_proba = model.predict(X_test, num_iteration=model.best_iteration)
     
     # P(home_loss)をP(home_win)に変換
-    print("予測確率を P(home_loss) から P(home_win) に変換します。")
-    y_pred_proba = 1 - y_pred_proba
+    # print("予測確率を P(home_loss) から P(home_win) に変換します。")
+    # y_pred_proba = 1 - y_pred_proba
     
     y_pred_class = (y_pred_proba > 0.5).astype(int)
 

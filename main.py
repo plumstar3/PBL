@@ -4,7 +4,7 @@ from config import DB_PATH, LIMIT_ROWS, FEATURES, TARGET, LGB_PARAMS, CATEGORICA
 from data_loader import load_and_process_pbp
 from feature_engineering import create_features
 from model_trainer import prepare_data_for_model, split_data, train_and_evaluate
-from analysis import analyze_momentum
+from analysis import prepare_momentum_df, calculate_momentum_tables, display_momentum_rankings, validate_cumulative_momentum_direct, validate_cumulative_momentum, validate_average_momentum_lookup
 
 def main():
     """
@@ -38,10 +38,25 @@ def main():
         params=LGB_PARAMS,
         categorical_features=CATEGORICAL_FEATURES
     )
-
-    # 6. モメンタム分析
     model_df_test['win_probability_pred'] = y_pred_proba
-    analyze_momentum(model_df_test, event_map=EVENT_ID_TO_NAME_MAP)
+    # 6. モメンタム分析と検証
+    # 6a. モメンタム計算の元になるDFを準備
+    momentum_df = prepare_momentum_df(model_df_test)
+    
+    # 6b. イベントごとの平均モメンタムを計算
+    home_momentum, visitor_momentum = calculate_momentum_tables(momentum_df, event_map=EVENT_ID_TO_NAME_MAP)
+    
+    # 6c. ランキングを表示
+    display_momentum_rankings(home_momentum, visitor_momentum)
+    
+    # 6d. 累積モメンタムの妥当性を検証
+    validate_cumulative_momentum(model_df_test, home_momentum, visitor_momentum)
+
+    validate_average_momentum_lookup(model_df_test, home_momentum, visitor_momentum)
+    
+
+    #validate_cumulative_momentum_direct(momentum_df)
+
 
     print("\n--- パイプライン終了 ---")
 
