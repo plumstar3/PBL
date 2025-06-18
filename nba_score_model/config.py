@@ -16,3 +16,6 @@ EVENT_CATEGORIES = [
     'unforced_turnover',
     'steal',
 ]
+
+# --- モデルが使用する特徴量のリスト ---
+MODEL_FEATURES = [f'diff_{cat}' for cat in EVENT_CATEGORIES]

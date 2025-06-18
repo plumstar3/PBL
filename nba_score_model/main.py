@@ -1,5 +1,6 @@
-from config import DB_PATH, LIMIT_ROWS, EVENT_CATEGORIES
+from config import DB_PATH, LIMIT_ROWS, EVENT_CATEGORIES, MODEL_FEATURES
 from data_processor import load_raw_data, create_game_level_features
+from model import train_and_interpret_model
 
 def main():
     """
@@ -15,8 +16,13 @@ def main():
     print("作成された特徴量データ（先頭5行）:")
     print(game_features_df.head())
     
-    # この後、この game_features_df を使ってロジスティック回帰モデルを訓練する
-    # (次回のステップで実装)
+    # 3. モデルを訓練し、モメンタムスコアを算出する処理を追加
+    if not game_features_df.empty:
+        train_and_interpret_model(
+            game_features_df, 
+            feature_cols=MODEL_FEATURES, 
+            target_col='home_win'
+        )
 
 if __name__ == "__main__":
     main()
