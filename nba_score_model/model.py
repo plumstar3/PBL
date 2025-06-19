@@ -2,6 +2,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report
+from config import EVENT_CATEGORIES
 
 def train_and_interpret_model(game_features_df: pd.DataFrame, feature_cols: list, target_col: str):
     """
@@ -40,15 +41,32 @@ def train_and_interpret_model(game_features_df: pd.DataFrame, feature_cols: list
 
     # 5. 係数（モメンタムスコア）を抽出し、表示
     # model.coef_[0] に各特徴量の係数が格納されている
-    scores_df = pd.DataFrame({
-        'Event Category': feature_cols,
-        'Momentum Score (Coefficient)': model.coef_[0]
-    })
+    # 5. ホームとアウェイ別の係数（モメンタムスコア）を抽出し、表示
+    
+    # まず、特徴量名と係数を紐づける
+    coef_map = dict(zip(feature_cols, model.coef_[0]))
+    
+    results = []
+    for category in EVENT_CATEGORIES:
+        home_feature = f'home_{category}'
+        away_feature = f'away_{category}'
+        #モデルが内部的にホームチームの負けを基準に係数を計算しているので、スコアを反転
+        home_score = -1 * coef_map.get(home_feature, 0)
+        away_score = -1 * coef_map.get(away_feature, 0)
+        
+        results.append({
+            'Event Type': category,
+            'Home Score': home_score,
+            'Away Score': away_score
+        })
 
-    # スコアを降順で並び替え
-    scores_df = scores_df.sort_values(by='Momentum Score (Coefficient)', ascending=False)
-
-    print("\n--- 算出されたモメンタムスコア (モデルの係数) ---")
+    scores_df = pd.DataFrame(results)
+    
+    # ホームスコアの降順で並び替え
+    scores_df = scores_df.sort_values(by='Home Score', ascending=False)
+    
+    print("\n--- 算出されたモメンタムスコア (ホーム/アウェイ別) ---")
+    print("※Away Scoreは、アウェイチームの視点での価値に変換（係数の符号を反転）した値です。")
     print(scores_df.to_string(index=False))
-
+    
     return model, scores_df

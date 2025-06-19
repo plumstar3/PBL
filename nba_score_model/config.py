@@ -17,5 +17,8 @@ EVENT_CATEGORIES = [
     'steal',
 ]
 
-# --- モデルが使用する特徴量のリスト ---
-MODEL_FEATURES = [f'diff_{cat}' for cat in EVENT_CATEGORIES]
+# --- モデルが使用する特徴量のリスト（ホームとアウェイを分離） ---
+MODEL_FEATURES = []
+for category in EVENT_CATEGORIES:
+    MODEL_FEATURES.append(f'home_{category}')
+    MODEL_FEATURES.append(f'away_{category}')

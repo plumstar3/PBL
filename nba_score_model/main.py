@@ -1,6 +1,7 @@
 from config import DB_PATH, LIMIT_ROWS, EVENT_CATEGORIES, MODEL_FEATURES
 from data_processor import load_raw_data, create_game_level_features
 from model import train_and_interpret_model
+from game_analyzer import export_game_analysis_to_excel
 
 def main():
     """
@@ -18,11 +19,20 @@ def main():
     
     # 3. モデルを訓練し、モメンタムスコアを算出する処理を追加
     if not game_features_df.empty:
-        train_and_interpret_model(
+        model, scores_df = train_and_interpret_model(
             game_features_df, 
             feature_cols=MODEL_FEATURES, 
             target_col='home_win'
         )
+        # 4. 可視化の実行
+        #    最初の試合のIDを使ってグラフを作成する
+        if not game_features_df.empty:
+            sample_game_id = game_features_df.index[0]
+            export_game_analysis_to_excel(
+                game_id=sample_game_id,
+                raw_df=df_raw,
+                scores_df=scores_df
+            )
 
 if __name__ == "__main__":
     main()
