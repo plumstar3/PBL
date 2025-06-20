@@ -1,4 +1,3 @@
-# model_trainer.py
 import pandas as pd
 import lightgbm as lgb
 from sklearn.model_selection import GroupShuffleSplit, train_test_split
@@ -56,21 +55,28 @@ def train_and_evaluate(X_train, y_train, X_test, y_test, params, categorical_fea
     )
     print("モデルの訓練が完了しました。")
 
-    y_pred_proba = model.predict(X_test, num_iteration=model.best_iteration)
-    
-    # P(home_loss)をP(home_win)に変換
-    print("予測確率を P(home_loss) から P(home_win) に変換します。")
-    y_pred_proba = 1 - y_pred_proba
-    
-    y_pred_class = (y_pred_proba > 0.5).astype(int)
+    # --- ここから修正 ---
 
-    # 評価指標の表示
+    # 1. モデル評価用には、model.predict() が返す「生の」予測確率を使用する
+    y_pred_proba_for_eval = model.predict(X_test, num_iteration=model.best_iteration)
+    y_pred_class_for_eval = (y_pred_proba_for_eval > 0.5).astype(int)
+
+    # モデル評価（生の確率で計算）
     print("\n--- LightGBMモデル評価結果 ---")
-    print(f"  Accuracy:    {accuracy_score(y_test, y_pred_class):.4f}")
-    print(f"  ROC AUC:     {roc_auc_score(y_test, y_pred_proba):.4f}")
-    print(f"  Log Loss:    {log_loss(y_test, y_pred_proba):.4f}")
-    print(f"  Brier Score: {brier_score_loss(y_test, y_pred_proba):.4f}")
+    accuracy = accuracy_score(y_test, y_pred_class_for_eval)
+    auc = roc_auc_score(y_test, y_pred_proba_for_eval) # ★生の確率を使用
+    logloss = log_loss(y_test, y_pred_proba_for_eval)   # ★生の確率を使用
+    brier = brier_score_loss(y_test, y_pred_proba_for_eval) # ★生の確率を使用
+    
+    print(f"  Accuracy:    {accuracy:.4f}")
+    print(f"  ROC AUC:     {auc:.4f}")
+    print(f"  Log Loss:    {logloss:.4f}")
+    print(f"  Brier Score: {brier:.4f}")
     print("\n--- 分類レポート ---")
-    print(classification_report(y_test, y_pred_class))
+    print(classification_report(y_test, y_pred_class_for_eval))
 
-    return model, y_pred_proba
+    # 2. モメンタム分析用には、「反転させた」予測確率を使用する
+    y_pred_proba_for_analysis = 1 - y_pred_proba_for_eval
+
+    # 戻り値として「分析用の確率」を main.py に渡す
+    return model, y_pred_proba_for_analysis

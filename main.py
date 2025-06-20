@@ -1,4 +1,3 @@
-# main.py
 import pandas as pd
 from config import DB_PATH, LIMIT_ROWS, FEATURES, TARGET, LGB_PARAMS, CATEGORICAL_FEATURES, EVENT_ID_TO_NAME_MAP
 from data_loader import load_and_process_pbp

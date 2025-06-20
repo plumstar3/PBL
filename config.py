@@ -1,5 +1,3 @@
-# config.py
-
 # --- データ設定 ---
 DB_PATH = 'nba.sqlite'
 LIMIT_ROWS = 225109 # Noneにすると全件読み込み
