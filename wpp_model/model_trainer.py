@@ -55,7 +55,17 @@ def train_and_evaluate(X_train, y_train, X_test, y_test, params, categorical_fea
     )
     print("モデルの訓練が完了しました。")
 
+<<<<<<< HEAD:model_trainer.py
     # --- ここから修正 ---
+=======
+    y_pred_proba = model.predict(X_test, num_iteration=model.best_iteration)
+    
+    # P(home_loss)をP(home_win)に変換
+    # print("予測確率を P(home_loss) から P(home_win) に変換します。")
+    # y_pred_proba = 1 - y_pred_proba
+    
+    y_pred_class = (y_pred_proba > 0.5).astype(int)
+>>>>>>> 8f286ba942b1711b81d9e00036739a0b6df1c5f8:wpp_model/model_trainer.py
 
     # 1. モデル評価用には、model.predict() が返す「生の」予測確率を使用する
     y_pred_proba_for_eval = model.predict(X_test, num_iteration=model.best_iteration)
