@@ -1,8 +1,9 @@
 import pandas as pd
+import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report
-from config import EVENT_CATEGORIES
+from config import EVENT_CATEGORIES, MODEL_FEATURES
 
 def train_and_interpret_model(game_features_df: pd.DataFrame, feature_cols: list, target_col: str):
     """
@@ -22,12 +23,53 @@ def train_and_interpret_model(game_features_df: pd.DataFrame, feature_cols: list
     )
     print(f"訓練データ: {len(X_train)}試合, テストデータ: {len(X_test)}試合")
 
+    # 3a. 初期値を定義する
+    # この例では、直感に基づいた仮のスコアを初期値として設定します。
+    # この値を変更することで、ご自身の仮説を初期値として与えることができます。
+    initial_scores = {
+        # プラスのプレー（ホームチーム視点）
+        'home_3pt_success': 3.0,
+        'home_2pt_success': 2.0,
+        'home_ft_success': 1.0,
+        'home_rebound': 1.0,
+        'home_steal': 1.0,
+        # マイナスのプレー（ホームチーム視点）
+        'home_shot_miss': -1.5,
+        'home_unforced_turnover': -1.0,
+        # アウェイチームのプレーがホームに与える影響
+        'away_3pt_success': -3.0,
+        'away_2pt_success': -2.0,
+        'away_ft_success': -1.0,
+        'away_rebound': -1.0,
+        'away_steal': -1.0,
+        'away_shot_miss': 1.5,
+        'away_unforced_turnover': 1.0,
+    }
+
+    # feature_colsの順序に合わせて、初期値の配列を作成
+    initial_coef = np.array([initial_scores.get(feature, 0) for feature in feature_cols])
+    
+    # ★重要：モデルの係数は符号が反転する傾向があるため、
+    # ★手動で設定する初期値も、あらかじめ符号を反転させておく
+    #initial_coef = -1 * initial_coef
+    
+    print("\n設定する重みの初期値（内部的な係数値）:")
+    print(dict(zip(feature_cols, initial_coef)))
+
     # 3. ロジスティック回帰モデルを初期化し、訓練
     # C=1.0 は正則化の強さ。値を小さくするとモデルがよりシンプルになる
     # max_iterを増やすと、収束しやすくなる
-    model = LogisticRegression(random_state=42, C=1.0, max_iter=1000)
-    print("モデルの訓練を開始...")
-    model.fit(X_train, y_train)
+    # warm_start=Trueにすると、既存の係数を初期値として学習を開始する
+    model = LogisticRegression(random_state=42, C=1.0, max_iter=1000, warm_start=True)
+    
+    # model.fit() を呼び出す前に、係数と切片の初期値を設定
+    # .coef_は2次元配列なので、[initial_coef]とする
+    model.coef_ = np.array([initial_coef])
+    # 切片(bias)の初期値は0に設定
+    model.intercept_ = np.array([0.0])
+
+    print("\nモデルの訓練を開始...")
+    model.fit(X_train, y_train) # このfitで、設定した初期値から学習がスタートする
     print("モデルの訓練が完了しました。")
 
     # 4. テストデータでモデルの性能を評価
@@ -69,19 +111,5 @@ def train_and_interpret_model(game_features_df: pd.DataFrame, feature_cols: list
     print("※Away Scoreは、アウェイチームの視点での価値に変換（係数の符号を反転）した値です。")
     print(scores_df.to_string(index=False))
 
-    # 6. 【今回追加】累積モメンタムスコアによる妥当性検証
-    print("\n--- 累積モメンタムスコアによる妥当性検証 ---")
-    
-    # decision_functionで各テストデータの累積スコア（特徴量*係数の合計）を計算
-    cumulative_scores = model.decision_function(X_test)
-    
-    # 累積スコアの符号がプラスかどうかで勝敗を予測
-    # ここでも、モデルの係数が反転しているため、予測の符号も反転させる必要がある
-    predicted_wins_by_score = (cumulative_scores > 0).astype(int)
-    
-    # 精度を計算
-    validation_accuracy = accuracy_score(y_test, predicted_wins_by_score)
-    print(f"累積スコアの符号による勝敗予測の正解率 (on Test Set): {validation_accuracy:.4f}")
-    print("Note: この正解率は、上記のモデル性能評価のAccuracyと一致するはずです。")
     
     return model, scores_df
