@@ -66,22 +66,6 @@ def train_and_interpret_model(game_features_df: pd.DataFrame, feature_cols: list
     scores_df = scores_df.sort_values(by='Home Score', ascending=False)
     
     print("\n--- 算出されたモメンタムスコア (ホーム/アウェイ別) ---")
-    print("※Away Scoreは、アウェイチームの視点での価値に変換（係数の符号を反転）した値です。")
     print(scores_df.to_string(index=False))
 
-    # 6. 【今回追加】累積モメンタムスコアによる妥当性検証
-    print("\n--- 累積モメンタムスコアによる妥当性検証 ---")
-    
-    # decision_functionで各テストデータの累積スコア（特徴量*係数の合計）を計算
-    cumulative_scores = model.decision_function(X_test)
-    
-    # 累積スコアの符号がプラスかどうかで勝敗を予測
-    # ここでも、モデルの係数が反転しているため、予測の符号も反転させる必要がある
-    predicted_wins_by_score = (cumulative_scores > 0).astype(int)
-    
-    # 精度を計算
-    validation_accuracy = accuracy_score(y_test, predicted_wins_by_score)
-    print(f"累積スコアの符号による勝敗予測の正解率 (on Test Set): {validation_accuracy:.4f}")
-    print("Note: この正解率は、上記のモデル性能評価のAccuracyと一致するはずです。")
-    
     return model, scores_df

@@ -24,15 +24,7 @@ def main():
             feature_cols=MODEL_FEATURES, 
             target_col='home_win'
         )
-        # 4. 可視化の実行
-        #    最初の試合のIDを使ってグラフを作成する
-        if not game_features_df.empty:
-            sample_game_id = game_features_df.index[0]
-            export_game_analysis_to_excel(
-                game_id=sample_game_id,
-                raw_df=df_raw,
-                scores_df=scores_df
-            )
+
 
 if __name__ == "__main__":
     main()

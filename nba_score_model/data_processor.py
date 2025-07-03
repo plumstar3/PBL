@@ -43,39 +43,70 @@ def get_game_outcomes(df: pd.DataFrame) -> pd.Series:
     game_outcomes.name = 'home_win'
     return game_outcomes
 
-def categorize_play(row: pd.Series) -> str | None:
+def categorize_play(row: pd.Series) -> list:
     """
-    プレイ・バイ・プレイの各行を、指定された7つのカテゴリに分類する。
-    戻り値は 'team_eventtype' (例: 'home_2pt_success') の形式。
+    1つのプレーから、関連する全てのイベントカテゴリをリストとして返す。
     """
+    categories = []
     event_type = row['eventmsgtype']
     home_desc = row['homedescription']
     away_desc = row['visitordescription']
-
+    
+    # アクションを起こしたのがホームかアウェイかを判定
+    actor = 'home' if home_desc else 'away'
+    opponent = 'away' if actor == 'home' else 'home'
+    actor_desc = home_desc if actor == 'home' else away_desc
+    
+    # --- シュート成功 (eventmsgtype: 1) ---
     if event_type == 1:
-        if "3PT" in home_desc or "3PT" in away_desc:
-            return 'home_3pt_success' if home_desc else 'away_3pt_success'
+        if "3PT" in actor_desc:
+            categories.append(f'{actor}_3pt_success')
         else:
-            return 'home_2pt_success' if home_desc else 'away_2pt_success'
+            categories.append(f'{actor}_2pt_success')
+
+    # --- シュート失敗 (eventmsgtype: 2) ---
     elif event_type == 2:
-        return 'home_shot_miss' if home_desc else 'away_shot_miss'
-    elif event_type == 3:
-        if "MISS" not in home_desc and "MISS" not in away_desc:
-            return 'home_ft_success' if home_desc else 'away_ft_success'
-        return None
-    elif event_type == 4:
-        return 'home_rebound' if "REBOUND" in home_desc else 'away_rebound'
-    elif event_type == 5:
-        if "STEAL" in home_desc:
-            return 'home_steal'
-        elif "STEAL" in away_desc:
-            return 'away_steal'
+        # ブロックを優先して判定
+        if "BLOCK" in home_desc or "BLOCK" in away_desc:
+            blocker = 'home' if "BLOCK" in home_desc else 'away'
+            categories.append(f'{blocker}_block')
         else:
-            if "Turnover" in home_desc:
-                return 'home_unforced_turnover'
-            elif "Turnover" in away_desc:
-                return 'away_unforced_turnover'
-    return None
+            # ブロックされなかった純粋なシュートミス
+            categories.append(f'{actor}_shot_miss_unblocked')
+
+    # --- フリースロー (eventmsgtype: 3) ---
+    elif event_type == 3:
+        if "MISS" in actor_desc:
+            categories.append(f'{actor}_ft_miss')
+        else:
+            categories.append(f'{actor}_ft_success')
+
+    # --- リバウンド (eventmsgtype: 4) ---
+    elif event_type == 4:
+        # (Off: があるかどうかでオフェンスリバウンドかを判定
+        if "(Off:" in actor_desc:
+            categories.append(f'{actor}_rebound_off')
+        else:
+            categories.append(f'{actor}_rebound_def')
+        
+    # --- ターンオーバー (eventmsgtype: 5) ---
+    elif event_type == 5:
+        # スティールを優先して判定
+        if "STEAL" in home_desc or "STEAL" in away_desc:
+            stealer = 'home' if "STEAL" in home_desc else 'away'
+            categories.append(f'{stealer}_steal')
+        else:
+            # スティール以外のターンオーバー
+            turnover_committer = 'home' if "Turnover" in home_desc else 'away'
+            categories.append(f'{turnover_committer}_unforced_turnover')
+            
+    # --- ファウル (eventmsgtype: 6) ---
+    elif event_type == 6:
+        # 今回は単純にファウルとしてカウント
+        fouler = 'home' if "FOUL" in home_desc else 'away'
+        categories.append(f'{fouler}_foul')
+
+    return categories
 
 def create_game_level_features(df: pd.DataFrame, event_categories: list) -> pd.DataFrame:
     """
@@ -83,20 +114,21 @@ def create_game_level_features(df: pd.DataFrame, event_categories: list) -> pd.D
     """
     print("\n--- 試合ごとの特徴量作成開始 ---")
     
-    # 1. 各プレーをカテゴリ分類
+    # 1. 各プレーをカテゴリ分類（複数のカテゴリが返される可能性がある）
     print("各プレーをカテゴリに分類中...")
-    # --- ここから修正 ---
-    # tqdm.pandas() と .progress_apply() を通常の .apply() に戻す
-    df['event_category'] = df.apply(categorize_play, axis=1)
-    # --- 修正ここまで ---
+    df['event_categories'] = df.apply(categorize_play, axis=1)
 
-    df_categorized = df.dropna(subset=['event_category'])
-    
-    # 2. 試合ごと、カテゴリごとにイベント回数を集計
+    # 2. カテゴリリストを個別の行に展開（explode）
+    # 例: ['home_2pt_success', 'home_assist'] というリストが2行のデータになる
+    print("イベントデータを展開中...")
+    df_exploded = df.explode('event_categories')
+    df_categorized = df_exploded.dropna(subset=['event_categories'])
+
+    # 3. 試合ごと、カテゴリごとにイベント回数を集計
     print("試合ごと、カテゴリごとにイベント回数を集計中...")
-    game_event_counts = df_categorized.groupby(['game_id', 'event_category']).size().unstack(fill_value=0)
+    game_event_counts = df_categorized.groupby(['game_id', 'event_categories']).size().unstack(fill_value=0)
 
-    # 3. ホームとアウェイのイベント回数を特徴量として準備
+    # 4. ホームとアウェイのイベント回数を特徴量として準備
     print("ホームとアウェイのイベント回数を特徴量として準備中...")
     all_feature_columns = []
     for category in event_categories:
@@ -107,9 +139,9 @@ def create_game_level_features(df: pd.DataFrame, event_categories: list) -> pd.D
         if col not in game_event_counts:
             game_event_counts[col] = 0
             
-    feature_df = game_event_counts[all_feature_columns]
+    feature_df = game_event_counts.reindex(columns=all_feature_columns, fill_value=0)
 
-    # 4. 試合の勝敗結果を結合
+    # 5. 試合の勝敗結果を結合
     print("試合の勝敗結果を結合中...")
     game_outcomes = get_game_outcomes(df)
     final_df = feature_df.join(game_outcomes).dropna()

@@ -2,7 +2,12 @@
 DB_PATH = '../nba.sqlite'
 
 #読み込み行数指定
+#500試合
 LIMIT_ROWS = 225109 
+#2440試合
+# LIMIT_ROWS = 1100917
+#4410試合
+#LIMIT_ROWS = 2000600
 
 
 # --- 分析対象のイベントカテゴリ ---
@@ -10,12 +15,17 @@ LIMIT_ROWS = 225109
 EVENT_CATEGORIES = [
     '2pt_success',
     '3pt_success',
-    'shot_miss',
+    'shot_miss_unblocked', # ブロックされなかったシュート失敗
     'ft_success',
-    'rebound',
+    'ft_miss',            
+    'rebound_off',        
+    'rebound_def',         
     'unforced_turnover',
-    'steal',
+    'steal',               
+    'block',                          
+    'foul',                
 ]
+
 
 # --- モデルが使用する特徴量のリスト（ホームとアウェイを分離） ---
 MODEL_FEATURES = []
