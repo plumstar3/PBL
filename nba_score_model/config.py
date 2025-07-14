@@ -3,9 +3,9 @@ DB_PATH = '../nba.sqlite'
 
 #読み込み行数指定
 #500試合
-LIMIT_ROWS = 225109 
+# LIMIT_ROWS = 225109 
 #2440試合
-# LIMIT_ROWS = 1100917
+LIMIT_ROWS = 1100917
 #4410試合
 #LIMIT_ROWS = 2000600
 

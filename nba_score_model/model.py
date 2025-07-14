@@ -68,4 +68,4 @@ def train_and_interpret_model(game_features_df: pd.DataFrame, feature_cols: list
     print("\n--- 算出されたモメンタムスコア (ホーム/アウェイ別) ---")
     print(scores_df.to_string(index=False))
 
-    return model, scores_df
+    return model, scores_df, X_test.index.tolist()

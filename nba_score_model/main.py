@@ -1,7 +1,7 @@
 from config import DB_PATH, LIMIT_ROWS, EVENT_CATEGORIES, MODEL_FEATURES
 from data_processor import load_raw_data, create_game_level_features
 from model import train_and_interpret_model
-from game_analyzer import export_game_analysis_to_excel
+from game_analyzer import export_game_analysis_to_excel, analyze_quarterly_momentum
 
 def main():
     """
@@ -19,10 +19,16 @@ def main():
     
     # 3. モデルを訓練し、モメンタムスコアを算出する処理を追加
     if not game_features_df.empty:
-        model, scores_df = train_and_interpret_model(
+        model, scores_df, test_game_ids = train_and_interpret_model(
             game_features_df, 
             feature_cols=MODEL_FEATURES, 
             target_col='home_win'
+        )
+    
+    analyze_quarterly_momentum(
+            test_game_ids=test_game_ids, # 関数から返されたリストを使用
+            raw_df=df_raw,
+            scores_df=scores_df
         )
 
 
