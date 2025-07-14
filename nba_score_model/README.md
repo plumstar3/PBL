@@ -39,7 +39,7 @@ $$S_g = b + \sum_{i} \left( w_{\text{home}, i} \cdot x_{g, \text{home}, i} + w_{
 
 $$P_g = \frac{1}{1 + e^{-S_g}}$$
 
-$$\underset{w,b}{\operatorname{argmin}} \, L(w,b)$$
+$$\underset{w,b}{\arg \min} \, L(w,b)$$
 
 ---
 
