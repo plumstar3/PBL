@@ -35,11 +35,14 @@ def get_game_outcomes(df: pd.DataFrame) -> pd.Series:
     final_events = end_game_events.sort_values('period').groupby('game_id').last()
     
     scores_split = final_events['score'].str.split(' - ', expand=True)
-    scores_split.columns = ['home_score', 'visitor_score']
-    scores_split['home_score'] = pd.to_numeric(scores_split['home_score'])
-    scores_split['visitor_score'] = pd.to_numeric(scores_split['visitor_score'])
     
-    game_outcomes = (scores_split['home_score'] > scores_split['visitor_score']).astype(int)
+    # 列名をデータの表記（away - home）に合わせて正しく設定
+    scores_split.columns = ['away_score', 'home_score'] 
+    
+    scores_split['home_score'] = pd.to_numeric(scores_split['home_score'])
+    scores_split['away_score'] = pd.to_numeric(scores_split['away_score'])
+    
+    game_outcomes = (scores_split['home_score'] > scores_split['away_score']).astype(int)
     game_outcomes.name = 'home_win'
     return game_outcomes
 
@@ -83,11 +86,9 @@ def categorize_play(row: pd.Series) -> list:
 
     # --- リバウンド (eventmsgtype: 4) ---
     elif event_type == 4:
-        # (Off: があるかどうかでオフェンスリバウンドかを判定
-        if "(Off:" in actor_desc:
-            categories.append(f'{actor}_rebound_off')
-        else:
-            categories.append(f'{actor}_rebound_def')
+        rebounder = 'home' if home_desc else 'away'
+        categories.append(f'{rebounder}_rebound')
+
         
     # --- ターンオーバー (eventmsgtype: 5) ---
     elif event_type == 5:

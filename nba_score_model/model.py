@@ -51,8 +51,8 @@ def train_and_interpret_model(game_features_df: pd.DataFrame, feature_cols: list
         home_feature = f'home_{category}'
         away_feature = f'away_{category}'
         #モデルが内部的にホームチームの負けを基準に係数を計算しているので、スコアを反転
-        home_score = -1 * coef_map.get(home_feature, 0)
-        away_score = -1 * coef_map.get(away_feature, 0)
+        home_score = coef_map.get(home_feature, 0)
+        away_score = coef_map.get(away_feature, 0)
         
         results.append({
             'Event Type': category,

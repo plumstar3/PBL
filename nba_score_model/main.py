@@ -1,7 +1,7 @@
 from config import DB_PATH, LIMIT_ROWS, EVENT_CATEGORIES, MODEL_FEATURES
 from data_processor import load_raw_data, create_game_level_features
 from model import train_and_interpret_model
-from game_analyzer import export_game_analysis_to_excel, analyze_quarterly_momentum
+from game_analyzer import create_quarterly_data, analyze_comeback_cases, run_gee_model
 
 def main():
     """
@@ -24,12 +24,29 @@ def main():
             feature_cols=MODEL_FEATURES, 
             target_col='home_win'
         )
-    
-    analyze_quarterly_momentum(
-            test_game_ids=test_game_ids, # 関数から返されたリストを使用
+        # 4. 【今回追加】Excelファイルへの出力処理
+        #    テストデータセットの最初の試合をサンプルとして出力する
+        # if test_game_ids: # テストデータが存在する場合のみ実行
+        #     sample_game_id = '0029600458'
+        #     export_game_analysis_to_excel(
+        #         game_id=sample_game_id,
+        #         raw_df=df_raw,      # 生のPBPデータ
+        #         scores_df=scores_df   # 訓練済みモデルから得たスコア
+        #     )
+
+        # ステップ4: クォーターごとの分析用データを作成
+        quarterly_df = create_quarterly_data(
+            test_game_ids=test_game_ids,
             raw_df=df_raw,
             scores_df=scores_df
         )
+
+        if not quarterly_df.empty:
+            # ステップ5: 逆転可能性の比較分析を実行
+            analyze_comeback_cases(quarterly_df)
+
+            # ステップ6: 混合効果モデル分析を実行
+            run_gee_model(quarterly_df)
 
 
 if __name__ == "__main__":
