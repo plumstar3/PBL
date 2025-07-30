@@ -38,7 +38,7 @@ def get_game_outcomes(df: pd.DataFrame) -> pd.Series:
     
     scores_split = final_events['score'].str.split(' - ', expand=True)
     
-    scores_split.columns = ['home_score', 'away_score'] 
+    scores_split.columns = ['away_score', 'home_score'] 
     
     scores_split['home_score'] = pd.to_numeric(scores_split['home_score'])
     scores_split['away_score'] = pd.to_numeric(scores_split['away_score'])

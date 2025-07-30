@@ -20,7 +20,7 @@ def train_and_interpret_model(game_features_df: pd.DataFrame, feature_cols: list
         X, y, test_size=0.2, random_state=42, stratify=y
     )
     print(f"訓練データ: {len(X_train)}試合, テストデータ: {len(X_test)}試合")
-    model = LogisticRegression(random_state=42, C=1.0, max_iter=1000)
+    model = LogisticRegression(random_state=42, C=0.1, max_iter=1000)
     print("モデルの訓練を開始...")
     model.fit(X_train, y_train)
     print("モデルの訓練が完了しました。")
