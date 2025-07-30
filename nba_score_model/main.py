@@ -34,19 +34,19 @@ def main():
         #         scores_df=scores_df   # 訓練済みモデルから得たスコア
         #     )
 
-        # ステップ4: クォーターごとの分析用データを作成
-        quarterly_df = create_quarterly_data(
-            test_game_ids=test_game_ids,
-            raw_df=df_raw,
-            scores_df=scores_df
-        )
+        # クォーターごとの分析用データを作成
+        # quarterly_df = create_quarterly_data(
+        #     test_game_ids=test_game_ids,
+        #     raw_df=df_raw,
+        #     scores_df=scores_df
+        # )
 
-        if not quarterly_df.empty:
-            # ステップ5: 逆転可能性の比較分析を実行
-            analyze_comeback_cases(quarterly_df)
+        # if not quarterly_df.empty:
+        #     # ステップ5: 逆転可能性の比較分析を実行
+        #     analyze_comeback_cases(quarterly_df)
 
-            # ステップ6: 混合効果モデル分析を実行
-            run_gee_model(quarterly_df)
+        #     # ステップ6: 混合効果モデル分析を実行
+        #     run_gee_model(quarterly_df)
 
 
 if __name__ == "__main__":
